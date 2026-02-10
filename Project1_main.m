@@ -1,3 +1,6 @@
+clear;
+close all;
+
 %
 % Name :
 %   ray_test4.m
@@ -33,7 +36,7 @@ UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
 speed_of_light = 2.99792458e8;
 
-ray_bear = 324.7;
+% ray_bear = 324.7;
 
 % Chesapeake, VA
 origin_lat = 36.77;          % latitude of the start point of ray
@@ -43,6 +46,17 @@ origin_long = -76.29;         % longitude of the start point of ray
 % origin_lat = 27.80;          % latitude of the start point of ray
 % origin_long = -97.40;         % longitude of the start point of ray
 
+% Auburn, AL
+receiver_lat = 32.61;          % latitude of the receiver
+receiver_long = -85.48;         % longitude of the receiver
+
+% calculate bearing and range
+[dist_m, ray_bear] = latlon2raz(receiver_lat,receiver_long,origin_lat,origin_long);
+dist_km = dist_m/1000;
+fprintf('Target Range: %.2f km | Bearing: %.2f deg\n', dist_km, ray_bear);
+% committing here because bearing and range are correct (per Google Earth)
+%%
+% these are leftover from ray_test4.m
 doppler_flag = 1;            % generate ionosphere 5 minutes later so that
                              % Doppler shift can be calculated
 irregs_flag = 0;             % no irregularities - not interested in 
@@ -87,7 +101,7 @@ iono_en_grid_5 = iono_pf_grid_5.^2 / 80.6164e-6;
 %
 
 % first call to raytrace so pass in the ionospheric and geomagnetic grids 
-freqs = [5 : 35];
+freqs = 1:0.1:10; % 1-10 MHz in 0.1 MHz increments
 elevs = ones(size(freqs)).*20;
 num_elevs = length(elevs);
 tol = 1e-7;          % ODE tolerance
