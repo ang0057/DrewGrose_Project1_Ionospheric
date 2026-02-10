@@ -28,13 +28,21 @@
 %
 % setup general stuff
 %
-UT = [2001 3 15 7 0];        % UT - year, month, day, hour, minute
+% My birthday: August 15, 2003. Using 7am for the time.
+UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
 speed_of_light = 2.99792458e8;
 
 ray_bear = 324.7;
-origin_lat = -23.5;          % latitude of the start point of ray
-origin_long = 133.7;         % longitude of the start point of ray
+
+% Chesapeake, VA
+origin_lat = 36.77;          % latitude of the start point of ray
+origin_long = -76.29;         % longitude of the start point of ray
+
+% % Corpus Christi, TX
+% origin_lat = 27.80;          % latitude of the start point of ray
+% origin_long = -97.40;         % longitude of the start point of ray
+
 doppler_flag = 1;            % generate ionosphere 5 minutes later so that
                              % Doppler shift can be calculated
 irregs_flag = 0;             % no irregularities - not interested in 
