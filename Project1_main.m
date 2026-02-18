@@ -2,6 +2,7 @@ clear;
 close all;
 clc;
 
+% ==========================================
 % setup general stuff
 
 % My birthday: August 15, 2003. Using 7am for the time.
@@ -9,11 +10,9 @@ UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
 speed_of_light = 2.99792458e8;
 
-% ray_bear = 324.7; % from example
-
 % uncomment the desired transmitter location
-transmit = "VA";
-% transmit = "TX";
+% transmit = "VA";
+transmit = "TX";
 
 % switch statement to make it easier for me to change transmitters
 switch transmit
@@ -58,9 +57,6 @@ start_height = 0 ;      % start height for ionospheric grid (km)
 height_inc = 3;         % height increment (km)
 num_heights = 200;      % number of  heights (must be < 2000)
 
-% clear iri_options
-% iri_options.Ne_B0B1_model = 'Bil-2000'; % this is a non-standard setting for 
-%                                         % IRI but is used as an example
 
 % Generate the ionospheric grid
 tic
@@ -76,26 +72,13 @@ toc
 iono_en_grid = iono_pf_grid.^2 / 80.6164e-6;
 iono_en_grid_5 = iono_pf_grid_5.^2 / 80.6164e-6;
 
-
-%
-% Example 1 - rays of different frequency with same launch elevation
-% Changing from example to do project
-
-% first call to raytrace so pass in the ionospheric and geomagnetic grids 
+% freq and elevation angle setup
 freqs = 1:0.1:10; % 1-10 MHz in 0.1 MHz increments
 elevs = 3:0.2:85; % dense fan of elevation angles to hit the receiver
 num_elevs = length(elevs);
-tol = 1e-7;          % ODE tolerance
+tol = 1e-7; % ODE tolerance
 nhops = 2;
 
-% I will call raytrace_2d in a loop instead
-% tic
-% fprintf('Generating %d 2D NRT rays ...', num_elevs);
-% [ray_data, ray_path_data] = ...
-%     raytrace_2d(origin_lat, origin_long, elevs, ray_bear, freqs, nhops, ...
-%              tol, irregs_flag, iono_en_grid, iono_en_grid_5, ...
-% 	     collision_freq, start_height, height_inc, range_inc, irreg);
-% toc
 
 % ==========================================
 % MAIN SIMULATION LOOP
