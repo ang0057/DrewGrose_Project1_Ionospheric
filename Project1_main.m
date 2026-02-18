@@ -1,8 +1,9 @@
 clear;
 close all;
+clc;
 
 % setup general stuff
-%
+
 % My birthday: August 15, 2003. Using 7am for the time.
 UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
@@ -82,54 +83,120 @@ iono_en_grid_5 = iono_pf_grid_5.^2 / 80.6164e-6;
 
 % first call to raytrace so pass in the ionospheric and geomagnetic grids 
 freqs = 1:0.1:10; % 1-10 MHz in 0.1 MHz increments
-elevs = ones(size(freqs)).*20;
+elevs = 3:0.2:85; % dense fan of elevation angles to hit the receiver
 num_elevs = length(elevs);
 tol = 1e-7;          % ODE tolerance
 nhops = 2;
-tic
-fprintf('Generating %d 2D NRT rays ...', num_elevs);
-[ray_data, ray_path_data] = ...
-    raytrace_2d(origin_lat, origin_long, elevs, ray_bear, freqs, nhops, ...
-             tol, irregs_flag, iono_en_grid, iono_en_grid_5, ...
-	     collision_freq, start_height, height_inc, range_inc, irreg);
-toc
 
-% plot the rays and ionosphere
-figure(1)
-UT_str = [num2str(UT(3)) '/' num2str(UT(2)) '/' num2str(UT(1)) '  ' ...
-          num2str(UT(4), '%2.2d') ':' num2str(UT(5), '%2.2d') 'UT'];
-elev_str = [num2str(elevs(1)) ' deg'];
-R12_str = num2str(R12);
-lat_str = num2str(origin_lat);
-lon_str = num2str(origin_long);
-bearing_str = num2str(ray_bear);
-fig_str = [UT_str '   elevation = ' elev_str '   R12 = ' R12_str '   lat = ' ...
-           lat_str ', lon = ' lon_str ', bearing = ' bearing_str];
-set(gcf, 'name', fig_str)
-start_range = 0;
-end_range = 2500;
-end_range_idx = fix((end_range-start_range) ./ range_inc) + 1;
-start_ht = start_height;
-start_ht_idx = 1;
-end_ht = 450;
-end_ht_idx = fix(end_ht ./ height_inc) + 1;
-iono_pf_subgrid = iono_pf_grid(start_ht_idx:end_ht_idx, 1:end_range_idx);
-plot_ray_iono_slice(iono_pf_subgrid, start_range, end_range, range_inc, ...
-    start_ht, end_ht, height_inc, ray_path_data, 'color', [1, 1, 0.99], ...
-    'linewidth', 2);
+% I will call raytrace_2d in a loop instead
+% tic
+% fprintf('Generating %d 2D NRT rays ...', num_elevs);
+% [ray_data, ray_path_data] = ...
+%     raytrace_2d(origin_lat, origin_long, elevs, ray_bear, freqs, nhops, ...
+%              tol, irregs_flag, iono_en_grid, iono_en_grid_5, ...
+% 	     collision_freq, start_height, height_inc, range_inc, irreg);
+% toc
 
-set(gcf,'units','normal')
-pos = get(gcf,'position');
-pos(2) = 0.55;
-set(gcf,'position', pos)
+% ==========================================
+% MAIN SIMULATION LOOP
 
-% uncomment the following to print figure to hi-res ecapsulated postscript
-% and PNG files
-set(gcf, 'paperorientation', 'portrait')
-set(gcf, 'paperunits', 'cent', 'paperposition', [0 0 61 18])
-set(gcf, 'papertype', 'a4') 
-% print -depsc2 -loose -opengl test.ps 
-% print -dpng test.png
+% initialize results storage: [frequency, virtual height, elev angle] eventually
+ionogram_data = [];
 
+fprintf('Starting Frequency Sweep (%.1f - %.1f MHz)...\n', 1, 10);
 
-fprintf('\n')
+for f = freqs
+
+    % run raytrace_2d for the whole fan of angles
+    nhops = 1;
+    freq_vec = ones(size(elevs)) * f;
+
+    [ray_data, ~] = raytrace_2d(origin_lat, origin_long, elevs, ...
+        ray_bear, freq_vec, nhops, tol, irregs_flag, ...
+        iono_en_grid, iono_en_grid_5, ...
+        collision_freq, start_height, height_inc, ...
+        range_inc, irreg);
+
+    % Organize data
+    g_ranges = [ray_data.ground_range];
+    p_ranges = [ray_data.group_range]; % Virtual path length (P')
+
+    % Identify the skip distance (Minimum Ground Range)
+    % The Low Ray is on the left side of this minimum (lower elev angles)
+    % The High Ray is on the right side (higher elev angles)
+    [min_val, min_idx] = min(g_ranges);
+
+    % Isolate the Low Ray (and associated virtual heights and elev angles)
+    g_subset = g_ranges(1:min_idx);
+    p_subset = p_ranges(1:min_idx);
+    elev_subset = elevs(1:min_idx);
+
+    % Interpolate (in case rays missed the receiver by landing around it)
+    if length(g_subset) >= 2
+        
+        % Sort by ground range (required for interp1 function)
+        [g_sorted, sort_idx] = sort(g_subset);
+        p_sorted = p_subset(sort_idx);
+        elev_sorted = elev_subset(sort_idx);
+        
+        % Check bounds
+        min_sim_range = min(g_sorted);
+        max_sim_range = max(g_sorted);
+        
+        % Interpolation logic
+        if dist_km >= min_sim_range && dist_km <= max_sim_range
+            
+            % Interpolate values at the receiver distance
+            P_prime = interp1(g_sorted, p_sorted, dist_km, 'linear');
+            target_elev = interp1(g_sorted, elev_sorted, dist_km, 'linear');
+            
+            % Calculate virtual height from time-of-flight
+            % (Breit-Tuve Theorem)
+            h_virtual = sqrt( (P_prime/2)^2 - (dist_km/2)^2 );
+            
+            % Save result: [frequency, virtual height, elev angle]
+            % also storing elevation angle to satisfy 1) in the
+            % instructions and later plot it
+            ionogram_data = [ionogram_data; f, h_virtual, target_elev];
+        end
+    end
+end
+
+% ==========================================
+% Plotting
+
+% Ionogram
+figure('Color', 'w'); % forcing to white bc I'm in dark mode
+if ~isempty(ionogram_data)
+    plot(ionogram_data(:,1), ionogram_data(:,2), 'b.', 'LineWidth', 1.5);
+    grid on;
+    xlabel('Frequency (MHz)');
+    ylabel('Virtual Reflection Height (km)');
+    title(['Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
+
+    % switch statement to easily update subtitle
+    switch transmit
+        case "VA"
+            % Chesapeake, VA
+            subtitle('Tx: Chesapeake -> Rx: Auburn', 'Color','k');
+        case "TX"
+            subtitle('Tx: Corpus Christi -> Rx: Auburn', 'Color','k');
+    end
+
+    xlim([1 10]);
+    ylim([0 650]); % Ionogram height range from instructions
+    set(gca, 'Color', 'w'); % Force axes background to white
+    set(gca, 'XColor', 'k', 'YColor', 'k'); % Force axis lines to black
+else
+    fprintf('No rays reached the receiver! Check geometry or frequencies.\n');
+end
+
+% Elevation angle of the ray that reaches the receiver for each frequency
+figure('Color', 'w'); % forcing to white bc I'm in dark mode
+plot(ionogram_data(:,1), ionogram_data(:,3), 'b.-', 'LineWidth', 1.5);
+grid on;
+set(gca, 'Color', 'w'); % Force axes background to white
+set(gca, 'XColor', 'k', 'YColor', 'k'); % Force axis lines to black
+xlabel('Frequency (MHz)');
+ylabel('Elevation Angle (deg)');
+title('Elevation angle of the ray that reaches the receiver for each frequency', 'Color','k');
