@@ -35,6 +35,9 @@ end
 receiver_lat = 32.61;          % latitude of the receiver
 receiver_long = -85.48;         % longitude of the receiver
 
+% Set Origin Height (Required for 3D raytrace)
+origin_ht = 0;
+
 % calculate bearing and range
 [dist_m, ray_bear] = latlon2raz(receiver_lat,receiver_long,origin_lat,origin_long);
 dist_km = dist_m/1000;
@@ -98,10 +101,6 @@ tic
                      doppler_flag);
 toc
 
-% Convert Plasma Frequency to Electron Density
-iono_en_grid = iono_pf_grid.^2 / 80.6164e-6;
-
-%%
 % convert plasma frequency grid to  electron density in electrons/cm^3
 iono_en_grid = iono_pf_grid.^2 / 80.6164e-6;
 iono_en_grid_5 = iono_pf_grid_5.^2 / 80.6164e-6;
@@ -113,133 +112,114 @@ num_elevs = length(elevs);
 tol = 1e-7; % ODE tolerance
 nhops = 2;
 
+% 3D requirement
+ray_bear_vec = ones(size(elevs)) * ray_bear;
 
 % ==========================================
 % MAIN SIMULATION LOOP
 
-% initialize results storage: [frequency, virtual height, elev angle] eventually
-ionogram_data = [];
+% initialize results storage for all modes now
+ionogram_data_2D = []; % No field (Mode 0)
+ionogram_data_O  = []; % O-Mode (Mode 1)
+ionogram_data_X  = []; % X-Mode (Mode -1
 
 fprintf('Starting Frequency Sweep (%.1f - %.1f MHz)...\n', 1, 10);
 
 for f = freqs
 
-    % run raytrace_2d for the whole fan of angles
+    % run raytrace_3d for the whole fan of angles
     nhops = 1;
     freq_vec = ones(size(elevs)) * f;
 
-    % Run 3D Raytrace
-    [ray_data_3d, ray_path_data_3d] = raytrace_3d(origin_lat, origin_long, ...
-        elevs, ray_bear, freq_vec, ...
-        nhops, tol, iono_en_grid, ...
-        B_field_grid);
+    % Loop through the 3 modes: 0 (No B-Field), 1 (O-Mode), -1 (X-Mode)
+    % (raytrace_3d has the mode input formatted using these numbers)
+    for mode = [0, 1, -1]
 
-    % Organize data
-    g_ranges = [ray_data.ground_range];
-    p_ranges = [ray_data.group_range]; % Virtual path length (P')
+        % Run 3D Raytrace
+        [ray_data, ~] = raytrace_3d(origin_lat, origin_long, origin_ht, ...
+            elevs, ray_bear_vec, freq_vec, mode, nhops, tol, ...
+            iono_en_grid, iono_en_grid_5, collision_freq, iono_grid_parms, ...
+            Bx, By, Bz, geomag_grid_parms);
 
-    % Identify the skip distance (Minimum Ground Range)
-    % The Low Ray is on the left side of this minimum (lower elev angles)
-    % The High Ray is on the right side (higher elev angles)
-    [min_val, min_idx] = min(g_ranges);
+        % Organize data
+        g_ranges = [ray_data.ground_range];
+        p_ranges = [ray_data.group_range]; % Virtual path length (P')
 
-    % Isolate the Low Ray (and associated virtual heights and elev angles)
-    g_subset = g_ranges(1:min_idx);
-    p_subset = p_ranges(1:min_idx);
-    elev_subset = elevs(1:min_idx);
+        % Identify skip distance
+        [~, min_idx] = min(g_ranges);
 
-    % Interpolate (in case rays missed the receiver by landing around it)
-    if length(g_subset) >= 2
-        
-        % Sort by ground range (required for interp1 function)
-        [g_sorted, sort_idx] = sort(g_subset);
-        p_sorted = p_subset(sort_idx);
-        elev_sorted = elev_subset(sort_idx);
-        
-        % Check bounds
-        min_sim_range = min(g_sorted);
-        max_sim_range = max(g_sorted);
-        
-        % Interpolation logic
-        if dist_km >= min_sim_range && dist_km <= max_sim_range
-            
-            % Interpolate values at the receiver distance
-            P_prime = interp1(g_sorted, p_sorted, dist_km, 'linear');
-            target_elev = interp1(g_sorted, elev_sorted, dist_km, 'linear');
-            
-            % Calculate virtual height from time-of-flight
-            % (Breit-Tuve Theorem)
-            h_virtual = sqrt( (P_prime/2)^2 - (dist_km/2)^2 );
-            
-            % Save result: [frequency, virtual height, elev angle]
-            % also storing elevation angle to satisfy 1) in the
-            % instructions and later plot it
-            ionogram_data = [ionogram_data; f, h_virtual, target_elev];
+        % Isolate Low Ray
+        g_subset = g_ranges(1:min_idx);
+        p_subset = p_ranges(1:min_idx);
+        elev_subset = elevs(1:min_idx);
+
+        % Interpolate
+        if length(g_subset) >= 2
+            [g_sorted, sort_idx] = sort(g_subset);
+            p_sorted = p_subset(sort_idx);
+            elev_sorted = elev_subset(sort_idx);
+
+            min_sim_range = min(g_sorted);
+            max_sim_range = max(g_sorted);
+
+            if dist_km >= min_sim_range && dist_km <= max_sim_range
+                P_prime = interp1(g_sorted, p_sorted, dist_km, 'linear');
+                target_elev = interp1(g_sorted, elev_sorted, dist_km, 'linear');
+                h_virtual = sqrt( (P_prime/2)^2 - (dist_km/2)^2 );
+
+                % Save result into the correct array based on the current mode
+                if mode == 0
+                    ionogram_data_2D = [ionogram_data_2D; f, h_virtual, target_elev];
+                elseif mode == 1
+                    ionogram_data_O = [ionogram_data_O; f, h_virtual, target_elev];
+                elseif mode == -1
+                    ionogram_data_X = [ionogram_data_X; f, h_virtual, target_elev];
+                end
+            end
         end
     end
 end
 
 % ==========================================
 % Plotting
+% ionogram
+figure('Color', 'w');  % forcing to white bc I'm in dark mode
+hold on;
 
-% Ionogram
-figure('Color', 'w'); % forcing to white bc I'm in dark mode
-if ~isempty(ionogram_data)
-    plot(ionogram_data(:,1), ionogram_data(:,2), 'b.-', 'LineWidth', 1.5);
-    grid on;
-    xlabel('Frequency (MHz)');
-    ylabel('Virtual Reflection Height (km)');
-    % title(['Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
-
-    % switch statement to easily update title based on date
-    switch UT(3)
-        case 15
-            % my birthday
-            title(['8/15/2003 7:00am, Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
-        case 16
-            % the next day
-            title(['8/16/2003 7:00am, Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
-    end
-
-    % switch statement to easily update subtitle based on transmitter
-    switch transmit
-        case "VA"
-            % Chesapeake, VA
-            subtitle('Tx: Chesapeake -> Rx: Auburn', 'Color','k');
-        case "TX"
-            % Corpus Christi, TX
-            subtitle('Tx: Corpus Christi -> Rx: Auburn', 'Color','k');
-    end
-
-    xlim([1 10]);
-    ylim([0 650]); % Ionogram height range from instructions
-    set(gca, 'Color', 'w'); % Force axes background to white
-    set(gca, 'XColor', 'k', 'YColor', 'k'); % Force axis lines to black
-else
-    fprintf('No rays reached the receiver! Check geometry or frequencies.\n');
+% Plot each mode if data exists
+if ~isempty(ionogram_data_2D)
+    plot(ionogram_data_2D(:,1), ionogram_data_2D(:,2), 'k.-', 'LineWidth', 1.5, 'DisplayName', '2D Eqv. (No B-Field)');
+end
+if ~isempty(ionogram_data_O)
+    plot(ionogram_data_O(:,1), ionogram_data_O(:,2), 'b.-', 'LineWidth', 1.5, 'DisplayName', '3D O-Mode');
+end
+if ~isempty(ionogram_data_X)
+    plot(ionogram_data_X(:,1), ionogram_data_X(:,2), 'r.-', 'LineWidth', 1.5, 'DisplayName', '3D X-Mode');
 end
 
-% Elevation angle of the ray that reaches the receiver for each frequency
-figure('Color', 'w'); % forcing to white bc I'm in dark mode
-plot(ionogram_data(:,1), ionogram_data(:,3), 'b.-', 'LineWidth', 1.5);
 grid on;
-set(gca, 'Color', 'w'); % Force axes background to white
-set(gca, 'XColor', 'k', 'YColor', 'k'); % Force axis lines to black
+legend('Location', 'best');
 xlabel('Frequency (MHz)');
-ylabel('Elevation Angle (deg)');
-title('Elevation angle of the ray that reaches the receiver for each frequency', 'Color','k');
+ylabel('Virtual Reflection Height (km)');
 
-% ==========================================
-% Extra code for checking the "rule of thumb"
-% Commented out so it doesn't run every time
+% switch statement to easily update title based on date
+switch UT(3)
+    case 15
+        % my birthday
+        title(['8/15/2003 7:00am, 2D vs 3D Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
+    case 16
+        % the next day
+        title(['8/16/2003 7:00am, 2D vs 3D Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
+end
+% switch statement to easily update subtitle based on transmitter
+switch transmit
+    case "VA"
+        subtitle('Tx: Chesapeake -> Rx: Auburn', 'Color','k');
+    case "TX"
+        subtitle('Tx: Corpus Christi -> Rx: Auburn', 'Color','k');
+end
 
-% Find maximum electron density in the grid
-% N_max = max(iono_en_grid(:)); 
-% fprintf('Max Electron Density (N_max): %.2e electrons/cm^3\n', N_max);
-
-% Calculate f_c using the "rule of thumb" (approx 9*sqrt(N))
-% convert N to SI (m^-3) for the standard formula f = 9*sqrt(N)
-% N_cm3 * 1e6 = N_m3
-% fc_Hz = 9 * sqrt(N_max * 1e6); 
-% fc_MHz = fc_Hz / 1e6;
-% fprintf('Theoretical Critical Frequency (fc): %.2f MHz\n', fc_MHz);
+xlim([1 10]);
+ylim([0 650]); % Ionogram height range from instructions
+set(gca, 'Color', 'w');  % Force axes background to white
+set(gca, 'XColor', 'k', 'YColor', 'k'); % Force axis lines to black
