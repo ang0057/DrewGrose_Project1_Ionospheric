@@ -5,14 +5,17 @@ clc;
 % ==========================================
 % setup general stuff
 
+% uncomment the desired date
 % My birthday: August 15, 2003. Using 7am for the time.
-UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
+% UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
+% THE NEXT DAY 24HR LATER:
+UT = [2003 8 16 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
 speed_of_light = 2.99792458e8;
 
 % uncomment the desired transmitter location
-% transmit = "VA";
-transmit = "TX";
+transmit = "VA";
+% transmit = "TX";
 
 % switch statement to make it easier for me to change transmitters
 switch transmit
@@ -151,18 +154,29 @@ end
 % Ionogram
 figure('Color', 'w'); % forcing to white bc I'm in dark mode
 if ~isempty(ionogram_data)
-    plot(ionogram_data(:,1), ionogram_data(:,2), 'b.', 'LineWidth', 1.5);
+    plot(ionogram_data(:,1), ionogram_data(:,2), 'b.-', 'LineWidth', 1.5);
     grid on;
     xlabel('Frequency (MHz)');
     ylabel('Virtual Reflection Height (km)');
-    title(['Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
+    % title(['Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
 
-    % switch statement to easily update subtitle
+    % switch statement to easily update title based on date
+    switch UT(3)
+        case 15
+            % my birthday
+            title(['8/15/2003 7:00am, Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
+        case 16
+            % the next day
+            title(['8/16/2003 7:00am, Oblique Ionogram: ' num2str(dist_km, '%.1f') ' km path'], 'Color','k');
+    end
+
+    % switch statement to easily update subtitle based on transmitter
     switch transmit
         case "VA"
             % Chesapeake, VA
             subtitle('Tx: Chesapeake -> Rx: Auburn', 'Color','k');
         case "TX"
+            % Corpus Christi, TX
             subtitle('Tx: Corpus Christi -> Rx: Auburn', 'Color','k');
     end
 
