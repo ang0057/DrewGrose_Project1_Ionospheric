@@ -7,15 +7,15 @@ clc;
 
 % uncomment the desired date
 % My birthday: August 15, 2003. Using 7am for the time.
-% UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
+UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
 % THE NEXT DAY 24HR LATER:
-UT = [2003 8 16 7 0];        % UT - year, month, day, hour, minute
+% UT = [2003 8 16 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
 speed_of_light = 2.99792458e8;
 
 % uncomment the desired transmitter location
-% transmit = "VA";
-transmit = "TX";
+transmit = "VA";
+% transmit = "TX";
 
 % switch statement to make it easier for me to change transmitters
 switch transmit
@@ -60,17 +60,48 @@ start_height = 0 ;      % start height for ionospheric grid (km)
 height_inc = 3;         % height increment (km)
 num_heights = 200;      % number of  heights (must be < 2000)
 
+% ==========================================
+% Generate 3D Grid
 
-% Generate the ionospheric grid
+% 3D param setup
+
+% Define Grid Boundaries (Must cover Tx and Rx with buffer)
+% Path: Chesapeake (~36.8N, -76.3E) <-> Auburn (~32.6N, -85.5E)
+
+lat_start = 25.0;      % Start south of both points
+lat_step  = 0.5;       % 0.5 degree resolution
+num_lats  = 40;        % Covers 25.0 to 45.0 degrees
+
+lon_start = -100.0;    % Start west of both (covers TX and AL)
+lon_step  = 1.0;       % 1.0 degree resolution
+num_lons  = 40;        % Covers -100.0 to -60.0 degrees
+
+ht_start  = 0;         % Start height (km)
+ht_step   = 3;         % Height step (km)
+num_hts   = 200;       % Covers 0 to 600 km
+
+% (Required by PHaRLAP 3D)
+% Vector Format: [lat_start, lat_step, num_lats, lon_start, lon_step, num_lons, h_start, h_step, num_hts]
+
+iono_grid_parms = [lat_start; lat_step; num_lats; ...
+                   lon_start; lon_step; num_lons; ...
+                   ht_start; ht_step; num_hts];
+
+geomag_grid_parms = iono_grid_parms; % Usually safe to use same grid for B-field
+
+
+% actually generate it
+fprintf('Generating 3D Ionosphere Grid...\n');
 tic
-fprintf('Generating ionospheric grid...\n')
-[iono_pf_grid, iono_pf_grid_5, collision_freq, irreg] = ...
-    gen_iono_grid_2d(origin_lat, origin_long, R12, UT, ray_bear, ...
-    max_range, num_range, range_inc, start_height, ...
-    height_inc, num_heights, kp, doppler_flag, 'iri2020');
+[iono_pf_grid, iono_pf_grid_5, collision_freq, Bx, By, Bz] = ...
+    gen_iono_grid_3d(UT, R12, iono_grid_parms, geomag_grid_parms, ...
+                     doppler_flag);
 toc
- 
 
+% Convert Plasma Frequency to Electron Density
+iono_en_grid = iono_pf_grid.^2 / 80.6164e-6;
+
+%%
 % convert plasma frequency grid to  electron density in electrons/cm^3
 iono_en_grid = iono_pf_grid.^2 / 80.6164e-6;
 iono_en_grid_5 = iono_pf_grid_5.^2 / 80.6164e-6;
@@ -97,11 +128,11 @@ for f = freqs
     nhops = 1;
     freq_vec = ones(size(elevs)) * f;
 
-    [ray_data, ~] = raytrace_2d(origin_lat, origin_long, elevs, ...
-        ray_bear, freq_vec, nhops, tol, irregs_flag, ...
-        iono_en_grid, iono_en_grid_5, ...
-        collision_freq, start_height, height_inc, ...
-        range_inc, irreg);
+    % Run 3D Raytrace
+    [ray_data_3d, ray_path_data_3d] = raytrace_3d(origin_lat, origin_long, ...
+        elevs, ray_bear, freq_vec, ...
+        nhops, tol, iono_en_grid, ...
+        B_field_grid);
 
     % Organize data
     g_ranges = [ray_data.ground_range];

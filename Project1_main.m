@@ -7,15 +7,15 @@ clc;
 
 % uncomment the desired date
 % My birthday: August 15, 2003. Using 7am for the time.
-% UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
+UT = [2003 8 15 7 0];        % UT - year, month, day, hour, minute
 % THE NEXT DAY 24HR LATER:
-UT = [2003 8 16 7 0];        % UT - year, month, day, hour, minute
+% UT = [2003 8 16 7 0];        % UT - year, month, day, hour, minute
 R12 = 100;                   % R12 index
 speed_of_light = 2.99792458e8;
 
 % uncomment the desired transmitter location
-% transmit = "VA";
-transmit = "TX";
+transmit = "VA";
+% transmit = "TX";
 
 % switch statement to make it easier for me to change transmitters
 switch transmit
@@ -203,12 +203,12 @@ title('Elevation angle of the ray that reaches the receiver for each frequency',
 % Commented out so it doesn't run every time
 
 % Find maximum electron density in the grid
-% N_max = max(iono_en_grid(:)); 
-% fprintf('Max Electron Density (N_max): %.2e electrons/cm^3\n', N_max);
+N_max = max(iono_en_grid(:)); 
+fprintf('Max Electron Density (N_max): %.2e electrons/cm^3\n', N_max);
 
 % Calculate f_c using the "rule of thumb" (approx 9*sqrt(N))
 % convert N to SI (m^-3) for the standard formula f = 9*sqrt(N)
 % N_cm3 * 1e6 = N_m3
-% fc_Hz = 9 * sqrt(N_max * 1e6); 
-% fc_MHz = fc_Hz / 1e6;
-% fprintf('Theoretical Critical Frequency (fc): %.2f MHz\n', fc_MHz);
+fc_Hz = 9 * sqrt(N_max * 1e6); 
+fc_MHz = fc_Hz / 1e6;
+fprintf('Theoretical Critical Frequency (fc): %.2f MHz\n', fc_MHz);
